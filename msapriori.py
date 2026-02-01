@@ -11,6 +11,9 @@ class ParameterData:
     support_difference_constraint: float = 0
     min_confidence: float = 0
 
+    def sort_mis_dict_by_value(self):
+        self.mis_per_item = od(sorted(self.mis_per_item.items(), key=lambda x: (x[1], x[0])))
+
     def __str__(self) -> str:
         to_str = (f"SDC = {self.support_difference_constraint}\n" + 
                   f"Min confidence = {self.min_confidence}\n")
@@ -32,10 +35,10 @@ def parse_params_cfg(path: str, param_data: ParameterData) -> ParameterData:
                 if mis_decl == "rest":
                     # fill any values in the dictionary that do not have a MIS
                     for key,value in param_data.mis_per_item.items():
-                        if param_data.mis_per_item[key] == None:
+                        if value == None:
                             param_data.mis_per_item[key] = float(pps[1])
                 else:
-                    param_data.mis_per_item[mis_decl] = float(pps[1])
+                    param_data.mis_per_item[int(mis_decl)] = float(pps[1])
             elif "SDC" in pps[0]:
                 param_data.support_difference_constraint = float(pps[1])
             elif "minconf" in pps[0]:
@@ -52,7 +55,7 @@ def parse_transactions_file(path: str, transaction_db: list, param_data: Paramet
             transaction_db.append(set(transaction.split(",")))
             for item in transaction.split(","): # insert any items into the param db
                 if item not in param_data.mis_per_item:
-                    param_data.mis_per_item[item] = None
+                    param_data.mis_per_item[int(item)] = None
 
 
 def compare_with_key(result: str, check: str):
@@ -63,8 +66,9 @@ def generate_rules():
     ...
 
 
-def msapriori():
-    ...
+def msapriori(transaction_db: list, param_db: ParameterData, rho):
+    param_db.sort_mis_dict_by_value() # first, we sort the mis dict by the values of the minimum supports to create a total order.
+    
 
 
 def candidate_generation():
@@ -83,7 +87,9 @@ if __name__ == "__main__":
     
     # initialize data for apriori
     parse_transactions_file(args.transactions, transaction_db, params)
-    params_db = parse_params_cfg(args.params, params)
+    params = parse_params_cfg(args.params, params)
+
+    msapriori(transaction_db=transaction_db, param_db=params, rho="")
 
     print(transaction_db)
     print(params)
