@@ -29,6 +29,18 @@ class ParameterData:
         return to_str
         
 
+def print_itemsets(k_itemset: od, items_per_line=10):
+    items = 0
+    print("{", end="")
+    for item,_ in k_itemset.items():
+        print(f"{item},", end="")
+        items += 1
+        if items >= items_per_line:
+            print()
+            items = 0
+    print("}")
+
+
 def parse_params_cfg(path: str, param_data: ParameterData) -> ParameterData:
     with open(path) as params_file:
         for line in params_file:
@@ -72,7 +84,7 @@ def generate_rules() -> set:
 
 
 def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: list, param_db: ParameterData) -> od:
-    candidate_set = od()
+    candidate_2_set = od()
     n_trans = len(transaction_db)
     candidates = level_1_candidates_dict["seeds"]
     supports = level_1_candidates_dict["supports"]
@@ -83,14 +95,62 @@ def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: l
         if candidate_support >= param_db.mis_per_item[candidate[0]]: # check if the candidate meets the minimum support
             for item in candidates[idx+1:]: # for each item in the candidate list after the current candidate
                 item_support = supports[item].count / n_trans
-                if item_support and (abs(item_support - candidate_support) <= param_db.support_difference_constraint): # if the items meet the SDC then combine and add
-                    candidate_set[(candidate[0], item[0])] = None
+                if item_support >= param_db.mis_per_item[item[0]] and (abs(item_support - candidate_support) <= param_db.support_difference_constraint): # if the items meet the SDC then combine and add
+                    candidate_2_set[(candidate[0], item[0])] = None
 
-    return candidate_set
+    return candidate_2_set
 
 
-def ms_candidate_generation(level_k_candidates, param_db: ParameterData) -> set:
-    ...
+# generates a pair in the frequent itemset where the two items differ in last value only, and the last value MIS of the second item is greater than the first,
+# and the supports satisfy the support difference constraint.
+# note that all items are sorted by their MIS value so we can easily generate candidates.
+# returns None when there are no more pairs.
+def _generate_pair(frequent_itemsets: od, n_transactions, param_db: ParameterData):
+    current_index = 0
+    stop_index = 0
+    itemsets = list(frequent_itemsets.items())
+    # for i in range(next_index, len(itemsets)):
+    while current_index != len(itemsets):
+        # get the location of the next frequent itemset that has a different first value
+        while stop_index < len(itemsets) and itemsets[current_index][0] == itemsets[stop_index][0]:
+            stop_index += 1
+
+        # slice the array to get a chunk of "similar" items to iterate over
+        itemset_chunk = itemsets[current_index:stop_index]
+        for idx,itemset in enumerate(itemset_chunk):
+            subiter = idx
+            while subiter < len(itemset_chunk):
+                check_pair = itemset_chunk[subiter]
+                failed = False
+                for j in range(len(itemset)-1): # check that all items in the itemset are the same except for last
+                    if itemset[j] != check_pair[j]:
+                        failed = True
+                        break
+
+                # if the last two items are different
+                if not failed and itemset[-1] != check_pair[-1]:
+                    i_last_support = param_db.mis_per_item[itemset[-1]]
+                    i_prime_last_support = param_db.mis_per_item[check_pair[-1]]
+                    # then we check the SDC and yield the pair if it passes
+                    if (abs(i_last_support - i_prime_last_support) <= param_db.support_difference_constraint):
+                        # print(tuple(list(itemset) + [check_pair[-1]]))
+                        # return None
+                        yield tuple(list(itemset) + [check_pair[-1]])
+
+                subiter += 1
+
+        current_index = stop_index
+    
+
+def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, param_db: ParameterData) -> od:
+    candidate_k_set = od()
+    n_trans = len(transaction_db)
+    sdc = param_db.support_difference_constraint
+    for itemset_pair in _generate_pair(last_set_frequent_candidates, n_trans, param_db):
+        print(itemset_pair, end=" ")
+        break
+
+    return candidate_k_set
 
 
 # initial pass steps:
@@ -125,8 +185,8 @@ def initial_pass(transactions: list, params: ParameterData) -> dict:
         elif initial_item != None and candidate_db[(item,)].count / len(transactions) >= params.mis_per_item[initial_item]:
             k1_frequent_itemsets.append((item,))
 
-    print("Seeds obtained from minimum supports...")
-    print(k1_frequent_itemsets)
+    # print("Seeds obtained from minimum supports...")
+    # print(k1_frequent_itemsets)
 
     # we can return the seeds and support counts
     return {"seeds": k1_frequent_itemsets, "supports": candidate_db}
@@ -136,17 +196,18 @@ def msapriori(transaction_db: list, param_db: ParameterData):
     param_db.sort_mis_dict_by_value() # first, we sort the mis dict by the values of the minimum supports to create a total order.
     candidates_dict = initial_pass(transaction_db, param_db) # get 1-frequent candidates
     # develop the first set of 1-frquent itemsets
-    frequent_items = od({1: od()})
+    frequent_items = {1: od()}
     for item in candidates_dict["seeds"]:
         if candidates_dict["supports"][item].count / len(transaction_db) >= param_db.mis_per_item[item[0]]:
             frequent_items[1][item] = None
 
     # debug
     print("1-frequent itemsets: ")
-    print(frequent_items)
+    print_itemsets(frequent_items[1])
 
     # next we generate frequent itemsets until we can't no mo'
     k_frequency = 2
+    candidate_counts = od()
     last_itemset = frequent_items[k_frequency-1]
     while(len(last_itemset) != 0):
         frequent_items[k_frequency] = od()
@@ -155,20 +216,26 @@ def msapriori(transaction_db: list, param_db: ParameterData):
         if k_frequency == 2:
             level_k_candidates = level2_candidate_generation(candidates_dict, transaction_db, param_db)
             print("Level 2 candidates:")
-            for candidate in level_k_candidates:
-                print(candidate)
+            print_itemsets(level_k_candidates)
         else:
-            level_k_candidates = ms_candidate_generation(last_itemset, param_db)
+            break
+            level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db)
 
         for transaction in transaction_db:
             for candidate in level_k_candidates:
-                if candidate in transaction: # if the candidate is in the transaction
-                    ...
+                if set(candidate).issubset(transaction): # if the candidate is in the transaction                
+                    # add the candidate if it does not exist
+                    if candidate not in candidate_counts:
+                        candidate_counts[candidate] = 0
+                    candidate_counts[candidate] += 1
 
-                if candidate[1:] in transaction: # if the tail is in the transaction
-                    ...
+                if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction
+                    if candidate[1:] not in candidate_counts:
+                        candidate_counts[candidate] = 0
+                    candidate_counts[candidate] += 1
 
         # update the frequent candidates list 
+        
 
         # move to next frequency
         k_frequency += 1
