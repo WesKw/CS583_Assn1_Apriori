@@ -209,6 +209,7 @@ def msapriori(transaction_db: list, param_db: ParameterData):
     k_frequency = 2
     candidate_counts = od()
     last_itemset = frequent_items[k_frequency-1]
+    n_transactions = len(transaction_db)
     while(len(last_itemset) != 0):
         frequent_items[k_frequency] = od()
         level_k_candidates = set()
@@ -218,7 +219,7 @@ def msapriori(transaction_db: list, param_db: ParameterData):
             print("Level 2 candidates:")
             print_itemsets(level_k_candidates)
         else:
-            break
+            # break
             level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db)
 
         for transaction in transaction_db:
@@ -235,10 +236,15 @@ def msapriori(transaction_db: list, param_db: ParameterData):
                     candidate_counts[candidate] += 1
 
         # update the frequent candidates list 
-        
+        for c in level_k_candidates:
+            if candidate_counts[c] / n_transactions >= param_db.mis_per_item[c[0]]:
+                frequent_items[k_frequency][c] = None
 
         # move to next frequency
         k_frequency += 1
+        last_itemset = frequent_items[k_frequency-1]
+
+    return frequent_items
 
 if __name__ == "__main__":
     parser = ap()
@@ -255,7 +261,11 @@ if __name__ == "__main__":
     params = parse_params_cfg(args.params, params)
     params.sort_mis_dict_by_value()
 
-    msapriori(transaction_db=transaction_db, param_db=params)
+    frequent_items = msapriori(transaction_db=transaction_db, param_db=params)
+
+    for k,itemsets in frequent_items.items():
+        print(f"Itemsets for k={k}:")
+        print_itemsets(itemsets)
 
     print("Ran MS-Apriori with...")
     print("Transactions:")
