@@ -1,8 +1,11 @@
 import re
 
+from decimal import Decimal,getcontext
 from collections import OrderedDict as od
 from argparse import ArgumentParser as ap
 from dataclasses import dataclass
+
+getcontext().prec = 5
 
 
 @dataclass
@@ -13,8 +16,8 @@ class ItemData:
 @dataclass
 class ParameterData:
     mis_per_item = od()
-    support_difference_constraint: float = 0
-    min_confidence: float = 0
+    support_difference_constraint: Decimal = Decimal(0)
+    min_confidence: Decimal = Decimal(0)
 
     def sort_mis_dict_by_value(self):
         self.mis_per_item = od(sorted(self.mis_per_item.items(), key=lambda x: (x[1], x[0])))
@@ -52,13 +55,15 @@ def parse_params_cfg(path: str, param_data: ParameterData) -> ParameterData:
                     # fill any values in the dictionary that do not have a MIS
                     for key,value in param_data.mis_per_item.items():
                         if value == None:
-                            param_data.mis_per_item[key] = float(pps[1])
+                            param_data.mis_per_item[key] = Decimal(pps[1])
+                            print(f"set {key} MIS to {pps[1]}")
                 else:
-                    param_data.mis_per_item[int(mis_decl)] = float(pps[1])
+                    print(f"set {mis_decl} MIS to {pps[1]}")
+                    param_data.mis_per_item[int(mis_decl)] = Decimal(pps[1])
             elif "SDC" in pps[0]:
-                param_data.support_difference_constraint = float(pps[1])
+                param_data.support_difference_constraint = Decimal(pps[1])
             elif "minconf" in pps[0]:
-                param_data.min_confidence = int(pps[1][:-1]) / 100 # min confidence is given as a percentage
+                param_data.min_confidence = Decimal(int(pps[1][:-1])) / Decimal(100) # min confidence is given as a percentage
 
     # sort the MIS based on value (total order)
     return param_data
@@ -88,15 +93,21 @@ def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: l
     n_trans = len(transaction_db)
     candidates = level_1_candidates_dict["seeds"]
     supports = level_1_candidates_dict["supports"]
+
     # candidates = L.items()
-    for idx,candidate in enumerate(candidates):
+    for idx,l in enumerate(candidates):
         # check MIS count
-        candidate_support = supports[candidate].count / n_trans
-        if candidate_support >= param_db.mis_per_item[candidate[0]]: # check if the candidate meets the minimum support
-            for item in candidates[idx+1:]: # for each item in the candidate list after the current candidate
-                item_support = supports[item].count / n_trans
-                if item_support >= param_db.mis_per_item[item[0]] and (abs(item_support - candidate_support) <= param_db.support_difference_constraint): # if the items meet the SDC then combine and add
-                    candidate_2_set[(candidate[0], item[0])] = None
+        candidate_support = Decimal(supports[l].count) / Decimal(n_trans)
+        if candidate_support >= param_db.mis_per_item[l[0]]: # check if the candidate meets the minimum support
+            for h in candidates[idx+1:]: # for each item in the candidate list after the current candidate
+                item_support = Decimal(supports[h].count) / Decimal(n_trans)
+                # print(l[0], h[0])
+                # print(f"|{item_support:.05f} - {candidate_support:.05f}| =", abs(item_support - candidate_support), f" <= {param_db.support_difference_constraint:.05f}")
+                # print(f"{item_support} >= {param_db.mis_per_item[l[0]]:.05f}")
+                if item_support >= param_db.mis_per_item[l[0]] and (abs(item_support - candidate_support) <= param_db.support_difference_constraint): # if the items meet the SDC then combine and add
+                    # print(f"Added ({l[0]}, {h[0]})")
+                    candidate_2_set[(l[0], h[0])] = None
+                # print()
 
     return candidate_2_set
 
@@ -185,9 +196,6 @@ def initial_pass(transactions: list, params: ParameterData) -> dict:
         elif initial_item != None and candidate_db[(item,)].count / len(transactions) >= params.mis_per_item[initial_item]:
             k1_frequent_itemsets.append((item,))
 
-    # print("Seeds obtained from minimum supports...")
-    # print(k1_frequent_itemsets)
-
     # we can return the seeds and support counts
     return {"seeds": k1_frequent_itemsets, "supports": candidate_db}
 
@@ -223,28 +231,36 @@ def msapriori(transaction_db: list, param_db: ParameterData):
             level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db)
 
         for transaction in transaction_db:
+            # print(transaction)
             for candidate in level_k_candidates:
-                if set(candidate).issubset(transaction): # if the candidate is in the transaction                
-                    # add the candidate if it does not exist
-                    if candidate not in candidate_counts:
-                        candidate_counts[candidate] = 0
+                # print(candidate)
+                # add the candidate if it does not exist
+                if candidate not in candidate_counts:
+                    candidate_counts[candidate] = 0
+
+                if candidate[1:] not in candidate_counts:
+                   candidate_counts[candidate[1:]] = 0
+
+                if set(candidate).issubset(transaction): # if the candidate is in the transaction
+                    # print(candidate, "is a subset of", transaction)                
                     candidate_counts[candidate] += 1
 
                 if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction
-                    if candidate[1:] not in candidate_counts:
-                        candidate_counts[candidate] = 0
-                    candidate_counts[candidate] += 1
+                    # print(candidate[1:], "tail is a subset of", transaction)
+                    candidate_counts[candidate[1:]] += 1
 
         # update the frequent candidates list 
         for c in level_k_candidates:
-            if candidate_counts[c] / n_transactions >= param_db.mis_per_item[c[0]]:
+            # print(f"Candidate: {c}")
+            # print(f"{candidate_counts[c]} / {n_transactions} >= {param_db.mis_per_item[c[0]]}")
+            if Decimal(candidate_counts[c]) / Decimal(n_transactions) >= param_db.mis_per_item[c[0]]:
                 frequent_items[k_frequency][c] = None
 
         # move to next frequency
         k_frequency += 1
         last_itemset = frequent_items[k_frequency-1]
 
-    return frequent_items
+    return frequent_items,candidate_counts
 
 if __name__ == "__main__":
     parser = ap()
@@ -261,7 +277,7 @@ if __name__ == "__main__":
     params = parse_params_cfg(args.params, params)
     params.sort_mis_dict_by_value()
 
-    frequent_items = msapriori(transaction_db=transaction_db, param_db=params)
+    frequent_items,candidate_counts = msapriori(transaction_db=transaction_db, param_db=params)
 
     for k,itemsets in frequent_items.items():
         print(f"Itemsets for k={k}:")
