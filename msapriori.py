@@ -4,13 +4,14 @@ from decimal import Decimal,getcontext
 from collections import OrderedDict as od
 from argparse import ArgumentParser as ap
 from dataclasses import dataclass
+from itertools import combinations
 
 getcontext().prec = 5
 
 
 @dataclass
 class ItemData:
-    count: int = 0
+    count: Decimal = Decimal(0)
 
 
 @dataclass
@@ -116,11 +117,10 @@ def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: l
 # and the supports satisfy the support difference constraint.
 # note that all items are sorted by their MIS value so we can easily generate candidates.
 # returns None when there are no more pairs.
-def _generate_pair(frequent_itemsets: od, n_transactions, param_db: ParameterData):
+def _generate_pair(frequent_itemsets: od, n_transactions, sdc: Decimal, supports: dict):
     current_index = 0
     stop_index = 0
-    itemsets = list(frequent_itemsets.items())
-    # for i in range(next_index, len(itemsets)):
+    itemsets = list(frequent_itemsets.keys())
     while current_index != len(itemsets):
         # get the location of the next frequent itemset that has a different first value
         while stop_index < len(itemsets) and itemsets[current_index][0] == itemsets[stop_index][0]:
@@ -128,6 +128,7 @@ def _generate_pair(frequent_itemsets: od, n_transactions, param_db: ParameterDat
 
         # slice the array to get a chunk of "similar" items to iterate over
         itemset_chunk = itemsets[current_index:stop_index]
+        # print(itemset_chunk)
         for idx,itemset in enumerate(itemset_chunk):
             subiter = idx
             while subiter < len(itemset_chunk):
@@ -140,26 +141,37 @@ def _generate_pair(frequent_itemsets: od, n_transactions, param_db: ParameterDat
 
                 # if the last two items are different
                 if not failed and itemset[-1] != check_pair[-1]:
-                    i_last_support = param_db.mis_per_item[itemset[-1]]
-                    i_prime_last_support = param_db.mis_per_item[check_pair[-1]]
+                    i_support = supports[(itemset[-1],)].count / Decimal(n_transactions)
+                    i_prime_support = supports[(check_pair[-1],)].count / Decimal(n_transactions)
                     # then we check the SDC and yield the pair if it passes
-                    if (abs(i_last_support - i_prime_last_support) <= param_db.support_difference_constraint):
+                    if (abs(i_support - i_prime_support) <= sdc):
                         # print(tuple(list(itemset) + [check_pair[-1]]))
                         # return None
+                        # print(f"Found candidate {tuple(list(itemset) + [check_pair[-1]])}")
                         yield tuple(list(itemset) + [check_pair[-1]])
 
                 subiter += 1
 
         current_index = stop_index
-    
 
-def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, param_db: ParameterData) -> od:
+
+def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, param_db: ParameterData, supports: dict) -> od:
     candidate_k_set = od()
     n_trans = len(transaction_db)
     sdc = param_db.support_difference_constraint
-    for itemset_pair in _generate_pair(last_set_frequent_candidates, n_trans, param_db):
-        print(itemset_pair, end=" ")
-        break
+    # insert join step candidates into candidate set
+    for joined_pair in _generate_pair(last_set_frequent_candidates, n_trans, param_db.support_difference_constraint, supports):
+        candidate_k_set[joined_pair] = None
+
+    # then prune candidates by looking through each size k-1 subset of a candidate if candidates exist
+    if candidate_k_set:
+        subset_size = len(list(candidate_k_set.keys())[0]) - 1
+        for c in candidate_k_set:
+            for subset in combinations(c, subset_size):
+                # check if first item is in subset or MIS values match c1 and c2
+                if c[0] in subset or param_db.mis_per_item[c[0]] == param_db.mis_per_item[c[1]]:
+                    if subset not in set(last_set_frequent_candidates.keys()):
+                        del candidate_k_set[c]
 
     return candidate_k_set
 
@@ -172,7 +184,7 @@ def initial_pass(transactions: list, params: ParameterData) -> dict:
     # step 1: record the support counts of each item for all transactions.
     candidate_db = od()
     for transaction in transactions:
-        print(transaction)
+        # print(transaction)
         for item in transaction:
             if ((item,)) not in candidate_db:
                 candidate_db[(item,)] = ItemData()
@@ -224,16 +236,14 @@ def msapriori(transaction_db: list, param_db: ParameterData):
         # if k is 2 we use a special candidate generation function
         if k_frequency == 2:
             level_k_candidates = level2_candidate_generation(candidates_dict, transaction_db, param_db)
-            print("Level 2 candidates:")
-            print_itemsets(level_k_candidates)
         else:
-            # break
-            level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db)
+            level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db, candidates_dict["supports"])
+
+        print(f"Level {k_frequency} candidates")
+        print_itemsets(level_k_candidates)
 
         for transaction in transaction_db:
-            # print(transaction)
             for candidate in level_k_candidates:
-                # print(candidate)
                 # add the candidate if it does not exist
                 if candidate not in candidate_counts:
                     candidate_counts[candidate] = 0
@@ -245,7 +255,7 @@ def msapriori(transaction_db: list, param_db: ParameterData):
                     # print(candidate, "is a subset of", transaction)                
                     candidate_counts[candidate] += 1
 
-                if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction
+                if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction (todo:: should we be doing this for every set of candidates)
                     # print(candidate[1:], "tail is a subset of", transaction)
                     candidate_counts[candidate[1:]] += 1
 
@@ -266,6 +276,7 @@ if __name__ == "__main__":
     parser = ap()
     parser.add_argument("-t", "--transactions", help="The input for database transactions.")
     parser.add_argument("-p", "--params", help="Parameters input")
+    parser.add_argument("--test", help="Test file to check output against", default="")
 
     args = parser.parse_args()
 
@@ -289,3 +300,7 @@ if __name__ == "__main__":
     print("Parameter data:")
     print(params)
     print("")
+
+    # if we want to test the output against a specific file
+    if args.test != "":
+        ...
