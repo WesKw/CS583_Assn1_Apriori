@@ -16,6 +16,13 @@ class ItemData:
 
 
 @dataclass
+class Rule:
+    antecedent: tuple
+    consequent: tuple
+    confidence: Decimal
+
+
+@dataclass
 class ParameterData:
     mis_per_item = od()
     support_difference_constraint: Decimal = Decimal(0)
@@ -86,15 +93,24 @@ def compare_with_key(result: str, check: str):
     return False
 
 
-def generate_ap_rules():
-    ...
-
-
 def generate_rules(frequent_itemsets: od, support_counts: od) -> od:
-    ...
-    # for k,itemset in frequent_itemsets.items():
-        # if k > 
-    return od()
+    rules = od()
+    for k,itemset in frequent_itemsets.items():
+        if k > 1:
+            rules[k] = od()
+            for item in itemset:
+                for idx,element in enumerate(item):
+                    consequent = element
+                    antecedent = tuple([i for i in item if i != consequent])
+                    f_count = support_counts[item].count if item in support_counts.keys() else 0
+                    antecedent_count = support_counts[antecedent].count if antecedent in support_counts.keys() else 0
+                    confidence = 0 if antecedent_count == 0 else f_count / antecedent_count
+                    potential_rule = Rule(antecedent=antecedent, consequent=consequent, confidence=Decimal(confidence))
+                    if item not in rules:
+                        rules[item] = []
+                    rules[item].append(potential_rule)
+
+    return rules
 
 
 def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: list, param_db: ParameterData) -> od:
@@ -198,12 +214,6 @@ def initial_pass(transactions: list, params: ParameterData) -> dict:
                 candidate_db[(item,)] = ItemData()
             candidate_db[(item,)].count += 1
 
-    # debug print support count
-    # print("Here are the initial supports for each item...")
-    # for item in candidate_db:
-    #     print(f"{item} support = {candidate_db[item].count} / {len(transactions)}")
-    # print("")
-
     # print("Getting candidate items through minimum supports...")
     k1_frequent_itemsets = []
     initial_item = None
@@ -242,10 +252,6 @@ def msapriori(transaction_db: list, param_db: ParameterData):
             if set(item[1:]).issubset(transaction):
                 candidate_counts[item].tail_count += 1
 
-    # debug
-    # print("1-frequent itemsets: ")
-    # print_itemsets(frequent_items[1])
-
     # next we generate frequent itemsets until we can't no mo'
     k_frequency = 2
     last_itemset = frequent_items[k_frequency-1]
@@ -266,23 +272,12 @@ def msapriori(transaction_db: list, param_db: ParameterData):
             for candidate in level_k_candidates:
                 # add the candidate if it does not exist
                 if candidate not in candidate_counts:
-                    # candidate_counts[candidate] = 0
                     candidate_counts[candidate] = ItemData(Decimal(0), Decimal(0))
 
-                # if candidate[1:] not in candidate_counts and len(candidate) > 1:
-                # #    candidate_counts[candidate[1:]] = 0
-                #    candidate_counts[candidate[1:]] = ItemData(Decimal(0), Decimal(0))
-
                 if set(candidate).issubset(transaction): # if the candidate is in the transaction
-                    # print(candidate, "is a subset of", transaction)                
-                    # candidate_counts[candidate] += 1
                     candidate_counts[candidate].count += 1
 
-                if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction (todo:: should we be doing this for every set of candidates)
-                    # print(candidate[1:], "tail is a subset of", transaction)
-                    # candidate_counts[candidate[1:]] += 1
-                    # candidate_counts[candidate].tail_count += 1 # update the tail count of the candidate
-                    # candidate_counts[candidate[1:]].count += 1 # update the count of the tail
+                if set(candidate[1:]).issubset(transaction): # if the tail is in the transaction
                     candidate_counts[candidate].tail_count += 1
 
         # update the frequent candidates list 
@@ -299,7 +294,7 @@ def msapriori(transaction_db: list, param_db: ParameterData):
     return frequent_items,candidate_counts
 
 
-def output_itemsets_and_rules(frequent_itemsets: od, support_counts: od, rules: od):
+def output_itemsets_and_rules(frequent_itemsets: od, support_counts: od, rules: od, minimum_conf: Decimal):
     for idx,itemset in frequent_itemsets.items():
         # print(f"\t({itemset})")
         if idx == 1:
@@ -313,6 +308,14 @@ def output_itemsets_and_rules(frequent_itemsets: od, support_counts: od, rules: 
             for item in itemset:
                 formatted = " ".join(f"{i}" for i in item)
                 print(f"\t({formatted}) : {support_counts[item].count} : {support_counts[item].tail_count}")
+                for rule in rules[item]:
+                    if rule.confidence >= minimum_conf:
+                        ant = rule.antecedent
+                        cons = rule.consequent
+                        formatted_rule = "(" + f" ".join([f"{i}" for i in ant]) + " -> " + f"{cons})"
+                        formatted = f"\t{formatted_rule} : {rule.confidence*100}%"
+                        print(formatted)
+            print(")")
 
 
 if __name__ == "__main__":
@@ -333,7 +336,7 @@ if __name__ == "__main__":
 
     frequent_items,candidate_counts = msapriori(transaction_db=transaction_db, param_db=params)
     rules = generate_rules(frequent_itemsets=frequent_items, support_counts=candidate_counts)
-    output_itemsets_and_rules(frequent_items, candidate_counts, rules)
+    output_itemsets_and_rules(frequent_items, candidate_counts, rules, minimum_conf=params.min_confidence)
 
     # for k,itemsets in frequent_items.items():
     #     print(f"Itemsets for k={k}:")
