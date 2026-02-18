@@ -13,6 +13,7 @@ getcontext().prec = 5
 class ItemData:
     count: Decimal = Decimal(0)
     tail_count: Decimal = Decimal(0)
+    extra_counts: Decimal = Decimal(0) # counts that are not tail counts but we use in rule generation
 
 
 @dataclass
@@ -320,8 +321,8 @@ def output_itemsets_and_rules(frequent_itemsets: od, support_counts: od, rules: 
 
 if __name__ == "__main__":
     parser = ap()
-    parser.add_argument("-t", "--transactions", help="The input for database transactions.")
-    parser.add_argument("-p", "--params", help="Parameters input")
+    parser.add_argument("transactions", help="The input for database transactions.")
+    parser.add_argument("params", help="Parameters input")
     parser.add_argument("--test", help="Test file to check output against", default="")
 
     args = parser.parse_args()
