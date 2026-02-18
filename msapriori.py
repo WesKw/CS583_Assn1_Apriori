@@ -1,3 +1,11 @@
+"""
+Implementation of the MS-Apriori algorithm. Rule generation only requires 1 consequent on the RHS.
+
+Author: Wesley Kwiecinski
+Last updated: 2/18/2026
+CS 583 - Data Mining - Assignment 1
+"""
+
 import re
 
 from decimal import Decimal,getcontext
@@ -11,13 +19,18 @@ getcontext().prec = 5
 
 @dataclass
 class ItemData:
+    """
+    Stores counts and tail counts for a frequent itemset.
+    """
     count: Decimal = Decimal(0)
     tail_count: Decimal = Decimal(0)
-    extra_counts: Decimal = Decimal(0) # counts that are not tail counts but we use in rule generation
 
 
 @dataclass
 class Rule:
+    """
+    Stores a rule for a given frequent itemset.
+    """
     antecedent: tuple
     consequent: tuple
     confidence: Decimal
@@ -25,14 +38,33 @@ class Rule:
 
 @dataclass
 class ParameterData:
+    """
+    Stores the list of parameter data given from a parameters input file.
+
+    The parameter input file is of this form:
+        MIS(1) = 0.02
+        MIS(2) = 0.04
+        …
+        MIS(rest) = 0.01
+        SDC = 0.003
+        minconf = 30%
+    """
     mis_per_item = od()
     support_difference_constraint: Decimal = Decimal(0)
     min_confidence: Decimal = Decimal(0)
 
     def sort_mis_dict_by_value(self):
+        """
+        Sorts the saved list of MIS values per item by the MIS value.
+        
+        :param self: Self
+        """
         self.mis_per_item = od(sorted(self.mis_per_item.items(), key=lambda x: (x[1], x[0])))
 
     def __str__(self) -> str:
+        """
+        Neatly prints the parameter file to the console.
+        """
         to_str = (f"SDC = {self.support_difference_constraint}\n" + 
                   f"Min confidence = {self.min_confidence}\n")
         
@@ -43,6 +75,13 @@ class ParameterData:
         
 
 def print_itemsets(k_itemset: od, items_per_line=10):
+    """
+    Prints a given frequent itemset.
+    
+    :param k_itemset: The itemset to print.
+    :type k_itemset: od
+    :param items_per_line: The number of items in the itemset to print per line.
+    """
     items = 0
     print("{", end="")
     for item,_ in k_itemset.items():
@@ -55,6 +94,16 @@ def print_itemsets(k_itemset: od, items_per_line=10):
 
 
 def parse_params_cfg(path: str, param_data: ParameterData) -> ParameterData:
+    """
+    Parses a parameter configuration file.
+    
+    :param path: The path to the file
+    :type path: str
+    :param param_data: The class instance to save the parsed parameters in.
+    :type param_data: ParameterData
+    :return: The filled class instance of ParameterData.
+    :rtype: ParameterData
+    """
     with open(path) as params_file:
         for line in params_file:
             pps = "".join(line.split()).split("=") # remove whitespace and split by =
@@ -80,6 +129,17 @@ def parse_params_cfg(path: str, param_data: ParameterData) -> ParameterData:
 
 
 def parse_transactions_file(path: str, transaction_db: list, param_data: ParameterData):
+    """
+    Parses a transactions file. Each file is a list of transactions separated by newlines. A
+    transaction is a comma separated list of integers.
+
+    :param path: The path to the transactions file.
+    :type path: str
+    :param transaction_db: Where to store the list of transactions.
+    :type transaction_db: list
+    :param param_data: The parameter data for a list of given transactions.
+    :type param_data: ParameterData
+    """
     with open(path) as transactions_file:
         for line in transactions_file:
             transaction = "".join(line.split())
@@ -90,11 +150,17 @@ def parse_transactions_file(path: str, transaction_db: list, param_data: Paramet
                     param_data.mis_per_item[item] = None
 
 
-def compare_with_key(result: str, check: str):
-    return False
-
-
 def generate_rules(frequent_itemsets: od, support_counts: od) -> od:
+    """
+    Generates rules for a given set of frequent itemsets and support counts.
+
+    :param frequent_itemsets: The ordered dict containing all frequent itemsets
+    :type frequent_itemsets: od
+    :param support_counts: The ordered dict containing all support counts for every frequent itemset candidate
+    :type support_counts: od
+    :return: Returns the ordered dictionary containing every possible rule from the list of given frequent itemsets
+    :rtype: OrderedDict[Any, Any]
+    """
     rules = od()
     for k,itemset in frequent_itemsets.items():
         if k > 1:
@@ -125,6 +191,18 @@ def generate_rules(frequent_itemsets: od, support_counts: od) -> od:
 
 
 def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: list, param_db: ParameterData) -> od:
+    """
+    Generates frequent 2-itemsets.
+    
+    :param level_1_candidates_dict: The set of 1-frequent itemsets
+    :type level_1_candidates_dict: dict
+    :param transaction_db: The list of transactions
+    :type transaction_db: list
+    :param param_db: The list of parameters for the set of transactions
+    :type param_db: ParameterData
+    :return: The ordered dict containing all level 2 candidates.
+    :rtype: OrderedDict[Any, Any]
+    """
     candidate_2_set = od()
     n_trans = len(transaction_db)
     candidates = level_1_candidates_dict["seeds"]
@@ -137,13 +215,8 @@ def level2_candidate_generation(level_1_candidates_dict: dict, transaction_db: l
         if candidate_support >= param_db.mis_per_item[l[0]]: # check if the candidate meets the minimum support
             for h in candidates[idx+1:]: # for each item in the candidate list after the current candidate
                 item_support = Decimal(supports[h].count) / Decimal(n_trans)
-                # print(l[0], h[0])
-                # print(f"|{item_support:.05f} - {candidate_support:.05f}| =", abs(item_support - candidate_support), f" <= {param_db.support_difference_constraint:.05f}")
-                # print(f"{item_support} >= {param_db.mis_per_item[l[0]]:.05f}")
                 if item_support >= param_db.mis_per_item[l[0]] and (abs(item_support - candidate_support) <= param_db.support_difference_constraint): # if the items meet the SDC then combine and add
-                    # print(f"Added ({l[0]}, {h[0]})")
                     candidate_2_set[(l[0], h[0])] = None
-                # print()
 
     return candidate_2_set
 
@@ -163,7 +236,6 @@ def _generate_pair(frequent_itemsets: od, n_transactions, sdc: Decimal, supports
 
         # slice the array to get a chunk of "similar" items to iterate over
         itemset_chunk = itemsets[current_index:stop_index]
-        # print(itemset_chunk)
         for idx,itemset in enumerate(itemset_chunk):
             subiter = idx
             while subiter < len(itemset_chunk):
@@ -180,9 +252,6 @@ def _generate_pair(frequent_itemsets: od, n_transactions, sdc: Decimal, supports
                     i_prime_support = supports[(check_pair[-1],)].count / Decimal(n_transactions)
                     # then we check the SDC and yield the pair if it passes
                     if (abs(i_support - i_prime_support) <= sdc):
-                        # print(tuple(list(itemset) + [check_pair[-1]]))
-                        # return None
-                        # print(f"Found candidate {tuple(list(itemset) + [check_pair[-1]])}")
                         yield tuple(list(itemset) + [check_pair[-1]])
 
                 subiter += 1
@@ -215,11 +284,9 @@ def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, 
 # 1) Find support counts of each item
 # 2) Follow sorted MIS order to develop frequent 1-itemsets
 def initial_pass(transactions: list, params: ParameterData) -> dict:
-    # print("Running initial pass...")
     # step 1: record the support counts of each item for all transactions.
     candidate_db = od()
     for transaction in transactions:
-        # print(transaction)
         for item in transaction:
             if ((item,)) not in candidate_db:
                 candidate_db[(item,)] = ItemData()
@@ -276,9 +343,6 @@ def msapriori(transaction_db: list, param_db: ParameterData):
         else:
             level_k_candidates = ms_candidate_generation(last_itemset, transaction_db, param_db, candidates_dict["supports"])
 
-        # print(f"Level {k_frequency} candidates")
-        # print_itemsets(level_k_candidates)
-
         for transaction in transaction_db:
             for candidate in level_k_candidates:
                 # add the candidate if it does not exist
@@ -293,8 +357,6 @@ def msapriori(transaction_db: list, param_db: ParameterData):
 
         # update the frequent candidates list 
         for c in level_k_candidates:
-            # print(f"Candidate: {c}")
-            # print(f"{candidate_counts[c]} / {n_transactions} >= {param_db.mis_per_item[c[0]]}")
             if Decimal(candidate_counts[c].count) / Decimal(n_transactions) >= param_db.mis_per_item[c[0]]:
                 frequent_items[k_frequency][c] = None
 
@@ -307,7 +369,6 @@ def msapriori(transaction_db: list, param_db: ParameterData):
 
 def output_itemsets_and_rules(frequent_itemsets: od, support_counts: od, rules: od, minimum_conf: Decimal):
     for idx,itemset in frequent_itemsets.items():
-        # print(f"\t({itemset})")
         if idx == 1:
             print(f"(Length-{idx} {len(itemset)}")
             for item in itemset:
@@ -348,18 +409,4 @@ if __name__ == "__main__":
     frequent_items,candidate_counts = msapriori(transaction_db=transaction_db, param_db=params)
     rules = generate_rules(frequent_itemsets=frequent_items, support_counts=candidate_counts)
     output_itemsets_and_rules(frequent_items, candidate_counts, rules, minimum_conf=params.min_confidence)
-
-    # for k,itemsets in frequent_items.items():
-    #     print(f"Itemsets for k={k}:")
-    #     print_itemsets(itemsets)
-
-    # print("Ran MS-Apriori with...")
-    # print("Transactions:")
-    # print(transaction_db)
-    # print("Parameter data:")
-    # print(params)
-    # print("")
-
-    # if we want to test the output against a specific file
-    if args.test != "":
-        ...
+    
