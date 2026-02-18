@@ -103,9 +103,19 @@ def generate_rules(frequent_itemsets: od, support_counts: od) -> od:
                 for idx,element in enumerate(item):
                     consequent = element
                     antecedent = tuple([i for i in item if i != consequent])
-                    f_count = support_counts[item].count if item in support_counts.keys() else 0
-                    antecedent_count = support_counts[antecedent].count if antecedent in support_counts.keys() else 0
-                    confidence = 0 if antecedent_count == 0 else f_count / antecedent_count
+                    itemset_count = support_counts[item].count if item in support_counts.keys() else 0
+                    confidence = 0
+                    antecedent_count = 0
+
+                    # if the consequent of the rule is the head of the frequent itemset, then we need to use the tail count to measure the confidence of the
+                    # rule instead of searching for the support of the antecedent in the support counts.
+                    if consequent == item[0]:
+                        # head item problem solution
+                        antecedent_count = support_counts[item].tail_count
+                    else: # otherwise we can do rule generation like normal.
+                        antecedent_count = support_counts[antecedent].count if antecedent in support_counts.keys() else 0
+
+                    confidence = 0 if antecedent_count == 0 else itemset_count / antecedent_count
                     potential_rule = Rule(antecedent=antecedent, consequent=consequent, confidence=Decimal(confidence))
                     if item not in rules:
                         rules[item] = []
