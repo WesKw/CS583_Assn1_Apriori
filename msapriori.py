@@ -1,5 +1,5 @@
 """
-Implementation of the MS-Apriori algorithm. Rule generation only requires 1 consequent on the RHS.
+Implementation of the MS-Apriori algorithm. Rule generation only requires 1 consequent.
 
 Author: Wesley Kwiecinski
 Last updated: 2/18/2026
@@ -143,8 +143,12 @@ def parse_transactions_file(path: str, transaction_db: list, param_data: Paramet
     with open(path) as transactions_file:
         for line in transactions_file:
             transaction = "".join(line.split())
-            transaction_db.append([int(item) for item in (transaction.split(","))])
-            for item in transaction.split(","): # insert any items into the param db
+            split = transaction.split(',')
+            if any([not item for item in split]): # check if any items are invalid
+                continue
+            transaction_db.append([int(item) for item in (split)])
+            # transaction_db.append([item for item in (transaction.split(","))])
+            for item in split: # insert any items into the param db
                 item = int(item)
                 if item not in param_data.mis_per_item:
                     param_data.mis_per_item[item] = None
@@ -298,7 +302,7 @@ def initial_pass(transactions: list, params: ParameterData) -> dict:
     # use tuples to make itemsets hashable
     for item,mis in params.mis_per_item.items():
         # find the first item in the sorted order that meets the minimum support threshold
-        if initial_item == None and candidate_db[(item,)].count / len(transactions) >= mis: # what is the minimum support fraction for a given item in the sorted MIS dict
+        if initial_item == None and (candidate_db[(item,)].count / len(transactions) >= mis): # what is the minimum support fraction for a given item in the sorted MIS dict
             k1_frequent_itemsets.append((item,))
             initial_item = item
         elif initial_item != None and candidate_db[(item,)].count / len(transactions) >= params.mis_per_item[initial_item]:
@@ -403,8 +407,11 @@ if __name__ == "__main__":
     
     # initialize data for apriori
     parse_transactions_file(args.transactions, transaction_db, params)
+    # for transaction in transaction_db:
+    #     print(transaction)
     params = parse_params_cfg(args.params, params)
     params.sort_mis_dict_by_value()
+    # print(params)
 
     frequent_items,candidate_counts = msapriori(transaction_db=transaction_db, param_db=params)
     rules = generate_rules(frequent_itemsets=frequent_items, support_counts=candidate_counts)
