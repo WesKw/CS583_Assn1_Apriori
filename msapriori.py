@@ -272,6 +272,7 @@ def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, 
         candidate_k_set[joined_pair] = None
 
     # then prune candidates by looking through each size k-1 subset of a candidate if candidates exist
+    new_candidate_k_set = od(candidate_k_set) # make a copy from the original that we can modify 
     if candidate_k_set:
         subset_size = len(list(candidate_k_set.keys())[0]) - 1
         for c in candidate_k_set:
@@ -279,9 +280,12 @@ def ms_candidate_generation(last_set_frequent_candidates, transaction_db: list, 
                 # check if first item is in subset or MIS values match c1 and c2
                 if c[0] in subset or param_db.mis_per_item[c[0]] == param_db.mis_per_item[c[1]]:
                     if subset not in set(last_set_frequent_candidates.keys()):
-                        del candidate_k_set[c]
+                        # del candidate_k_set[c]
+                        del new_candidate_k_set[c]
 
-    return candidate_k_set
+    # return candidate_k_set
+    return new_candidate_k_set # then return the copy
+
 
 
 # initial pass steps:
